@@ -1,16 +1,16 @@
 package com.willfp.talismans.talismans.util
 
-import com.willfp.eco.core.EcoPlugin
 import com.willfp.eco.core.fast.fast
-import com.willfp.talismans.TalismansPlugin.Companion.instance
+import com.willfp.eco.util.getNumericalPermission
+import com.willfp.talismans.plugin
 import org.bukkit.Material
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
+import java.util.concurrent.ConcurrentHashMap
 
 object TalismanUtils {
-    private val TALISMAN_MATERIALS = mutableSetOf<Material>()
-    private val PLUGIN: EcoPlugin = instance
+    private val TALISMAN_MATERIALS = ConcurrentHashMap.newKeySet<Material>()
 
     fun convert(itemStack: ItemStack?) {
         if (itemStack == null) {
@@ -27,25 +27,19 @@ object TalismanUtils {
         val level = container.get(talismanKey, PersistentDataType.INTEGER) ?: return
         container.remove(talismanKey)
         container.set(
-            PLUGIN.namespacedKeyFactory.create("talisman"),
+            plugin.namespacedKeyFactory.create("talisman"),
             PersistentDataType.STRING,
             talismanKey.key + "_" + level
         )
     }
 
     fun getLimit(player: Player): Int {
-        val prefix = "talismans.limit."
-        var highest = -1
-        for (permission in player.effectivePermissions.map { it.permission }) {
-            if (!permission.startsWith(prefix)) {
-                continue
-            }
-
-            val limit = permission.substring(permission.lastIndexOf(".") + 1).toInt()
-            if (limit > highest) {
-                highest = limit
-            }
+        val configLimit = plugin.configYml.getInt("talisman-limit")
+        if (configLimit > 0) {
+            return configLimit
         }
+
+        val highest = player.getNumericalPermission("talismans.limit", -1.0).toInt()
         return if (highest < 0) {
             10000
         } else {

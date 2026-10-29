@@ -1,15 +1,12 @@
 package com.willfp.talismans
 
+import com.willfp.eco.core.bstats.EcoMetricsChart
 import com.willfp.eco.core.command.impl.PluginCommand
 import com.willfp.eco.core.display.DisplayModule
-import com.willfp.eco.core.fast.fast
 import com.willfp.eco.core.items.Items
-import com.willfp.eco.core.items.tag.CustomItemTag
 import com.willfp.libreforge.conditions.Conditions
 import com.willfp.libreforge.loader.LibreforgePlugin
 import com.willfp.libreforge.loader.configs.ConfigCategory
-import com.willfp.libreforge.registerHolderProvider
-import com.willfp.libreforge.registerPlayerRefreshFunction
 import com.willfp.libreforge.registerSpecificHolderProvider
 import com.willfp.libreforge.registerSpecificRefreshFunction
 import com.willfp.libreforge.slot.SlotTypes
@@ -25,19 +22,34 @@ import com.willfp.talismans.talismans.util.DiscoverRecipeListener
 import com.willfp.talismans.talismans.util.TalismanChecks
 import org.bukkit.entity.Player
 import org.bukkit.event.Listener
-import org.bukkit.inventory.ItemStack
+
+internal lateinit var plugin: TalismansPlugin
+    private set
 
 class TalismansPlugin : LibreforgePlugin() {
     init {
-        instance = this
+        plugin = this
 
         TalismanChecks.registerItemStackProvider {
             TalismanBag.getTalismans(it)
         }
+
+        TalismanChecks.registerItemStackProvider {
+            if (configYml.getBool("read-inventory") && !configYml.getBool("offhand-only"))
+                it.inventory.contents.filterNotNull()
+            else emptyList()
+        }
+
+        TalismanChecks.registerItemStackProvider {
+            if (configYml.getBool("read-enderchest") && !configYml.getBool("offhand-only"))
+                @Suppress("UNNECESSARY_SAFE_CALL", "USELESS_ELVIS")
+                it.enderChest?.contents?.filterNotNull() ?: emptyList()
+            else emptyList()
+        }
     }
 
     override fun handleLoad() {
-        Items.registerTag(TalismanTag(this))
+        Items.registerTag(TalismanTag)
         Conditions.register(ConditionHasTalisman)
     }
 
@@ -54,8 +66,8 @@ class TalismansPlugin : LibreforgePlugin() {
     }
 
     override fun handleReload() {
-        TalismanBag.update(this)
-        TalismanChecks.reload(this)
+        TalismanBag.update()
+        TalismanChecks.reload()
     }
 
     override fun loadConfigCategories(): List<ConfigCategory> {
@@ -66,25 +78,43 @@ class TalismansPlugin : LibreforgePlugin() {
 
     override fun loadPluginCommands(): List<PluginCommand> {
         return listOf(
-            CommandTalismans(this)
+            CommandTalismans
         )
     }
 
     override fun loadListeners(): List<Listener> {
         return listOf(
-            BlockPlaceListener(),
-            DiscoverRecipeListener(this)
+            BlockPlaceListener,
+            DiscoverRecipeListener,
+            TalismanBag
         )
     }
 
     override fun loadDisplayModules(): List<DisplayModule> {
         return listOf(
-            TalismanDisplay(this)
+            TalismanDisplay
         )
     }
 
-    companion object {
-        @JvmStatic
-        lateinit var instance: TalismansPlugin
-    }
+    override fun getCustomCharts() = listOf(
+        EcoMetricsChart.SingleLine("total_talismans") { Talismans.values().size },
+        EcoMetricsChart.SimplePie("discover_recipes") {
+            if (configYml.getBool("crafting.discover")) "enabled" else "disabled"
+        },
+        EcoMetricsChart.SimplePie("read_inventory") {
+            if (configYml.getBool("read-inventory")) "enabled" else "disabled"
+        },
+        EcoMetricsChart.SimplePie("read_enderchest") {
+            if (configYml.getBool("read-enderchest")) "enabled" else "disabled"
+        },
+        EcoMetricsChart.SimplePie("read_shulkerboxes") {
+            if (configYml.getBool("read-shulkerboxes")) "enabled" else "disabled"
+        },
+        EcoMetricsChart.SimplePie("top_level_only") {
+            if (configYml.getBool("top-level-only")) "enabled" else "disabled"
+        },
+        EcoMetricsChart.SimplePie("offhand_only") {
+            if (configYml.getBool("offhand-only")) "enabled" else "disabled"
+        }
+    )
 }

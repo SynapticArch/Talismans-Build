@@ -1,40 +1,41 @@
 package com.willfp.talismans.talismans.util
 
-import com.github.benmanes.caffeine.cache.Cache
-import com.github.benmanes.caffeine.cache.Caffeine
-import com.willfp.eco.core.EcoPlugin
-import com.willfp.eco.core.config.updating.ConfigUpdater
+import com.willfp.eco.core.cache.EcoCache
 import com.willfp.eco.core.fast.fast
 import com.willfp.libreforge.ItemProvidedHolder
-import com.willfp.talismans.TalismansPlugin.Companion.instance
+import com.willfp.talismans.plugin
 import com.willfp.talismans.talismans.Talisman
 import com.willfp.talismans.talismans.Talismans.getByID
+import com.willfp.talismans.talismans.util.TalismanChecks.item
 import com.willfp.talismans.talismans.util.TalismanUtils.convert
 import com.willfp.talismans.talismans.util.TalismanUtils.getLimit
 import com.willfp.talismans.talismans.util.TalismanUtils.isTalismanMaterial
+import org.bukkit.Tag
 import org.bukkit.block.ShulkerBox
 import org.bukkit.entity.Player
 import org.bukkit.inventory.ItemStack
 import org.bukkit.inventory.meta.BlockStateMeta
 import org.bukkit.persistence.PersistentDataType
-import java.util.concurrent.TimeUnit
+import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import java.util.function.Function
 
 object TalismanChecks {
-    private val CACHED_TALISMANS: Cache<Player, Set<ItemProvidedHolder>> = Caffeine.newBuilder()
-        .expireAfterWrite(2, TimeUnit.SECONDS)
+    private val CACHED_TALISMANS: EcoCache<Player, Set<ItemProvidedHolder>> = EcoCache.builder<Player, Set<ItemProvidedHolder>>()
+        .expireAfterWrite(Duration.ofSeconds(2))
         .build()
 
-    private val CACHED_TALISMAN_ITEMS: Cache<Player, Set<ItemStack>> = Caffeine.newBuilder()
-        .expireAfterWrite(2, TimeUnit.SECONDS)
+    private val CACHED_TALISMAN_ITEMS: EcoCache<Player, Set<ItemStack>> = EcoCache.builder<Player, Set<ItemStack>>()
+        .expireAfterWrite(Duration.ofSeconds(2))
         .build()
 
-    private val PROVIDERS: MutableSet<Function<Player, List<ItemStack>>> = HashSet()
+    private val PROVIDERS: MutableSet<Function<Player, List<ItemStack>>> = ConcurrentHashMap.newKeySet()
 
+    @Volatile
     private var readShulkerBoxes = true
-    private var offhandOnly = false
 
-    private val PLUGIN: EcoPlugin = instance
+    @Volatile
+    private var offhandOnly = false
 
     /**
      * Does the specified ItemStack have a certain Talisman present?
@@ -75,7 +76,7 @@ object TalismanChecks {
         val container = item.fast().persistentDataContainer
 
         val id = container.get(
-            PLUGIN.namespacedKeyFactory.create("talisman"),
+            plugin.namespacedKeyFactory.create("talisman"),
             PersistentDataType.STRING
         ) ?: return null
 
@@ -113,7 +114,8 @@ object TalismanChecks {
                     continue
                 }
 
-                if (readShulkerBoxes) {
+                // Reading meta copies it, and only shulker boxes and talismans can change the result.
+                if (readShulkerBoxes && (Tag.SHULKER_BOXES.isTagged(rawContent.type) || isTalismanMaterial(rawContent.type))) {
                     val meta = rawContent.itemMeta
                     if (meta is BlockStateMeta) {
                         if (!meta.hasBlockState()) {
@@ -131,20 +133,22 @@ object TalismanChecks {
             }
 
             val items = mutableMapOf<Talisman, ItemStack>()
+            val limit by lazy(LazyThreadSafetyMode.NONE) { getLimit(it) }
 
             for (itemStack in contents) {
                 convert(itemStack)
                 val talis = getTalismanOnItem(itemStack) ?: continue
-                if (items.size >= getLimit(it)) {
+                if (items.size >= limit) {
                     break
                 }
                 items[talis] = itemStack
             }
 
-            if (PLUGIN.configYml.getBool("top-level-only")) {
+            if (plugin.configYml.getBool("top-level-only")) {
                 for ((talisman, _) in items.toMap()) {
+                    val visited = mutableSetOf(talisman)
                     var lowerLevel = talisman.lowerLevel
-                    while (lowerLevel != null) {
+                    while (lowerLevel != null && visited.add(lowerLevel)) {
                         items.remove(lowerLevel)
                         lowerLevel = lowerLevel.lowerLevel
                     }
@@ -217,23 +221,8 @@ object TalismanChecks {
 
     /**
      * Update config values.
-     *
-     * @param plugin Instance of Talismans.
      */
-    internal fun reload(plugin: EcoPlugin) {
-        if (plugin.configYml.getBool("read-inventory")) {
-            registerItemStackProvider {
-                it.inventory.contents.filterNotNull()
-            }
-        }
-
-        if (plugin.configYml.getBool("read-enderchest")) {
-            registerItemStackProvider {
-                @Suppress("UNNECESSARY_SAFE_CALL", "USELESS_ELVIS") // Was null once
-                it.enderChest?.contents?.filterNotNull() ?: emptyList()
-            }
-        }
-
+    internal fun reload() {
         readShulkerBoxes = plugin.configYml.getBool("read-shulkerboxes")
         offhandOnly = plugin.configYml.getBool("offhand-only")
     }

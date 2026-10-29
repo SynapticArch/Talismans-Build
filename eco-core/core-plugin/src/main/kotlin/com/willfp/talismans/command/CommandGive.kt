@@ -1,14 +1,22 @@
 package com.willfp.talismans.command
 
-import com.willfp.eco.core.EcoPlugin
 import com.willfp.eco.core.command.impl.Subcommand
+import com.willfp.eco.core.drops.DropQueue
+import com.willfp.eco.util.formatEco
+import com.willfp.talismans.plugin
+import com.willfp.talismans.runOwned
 import com.willfp.talismans.talismans.Talismans
 import com.willfp.talismans.talismans.Talismans.getByID
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 import org.bukkit.util.StringUtil
 
-class CommandGive(plugin: EcoPlugin) : Subcommand(plugin, "give", "talismans.command.give", false) {
+object CommandGive : Subcommand(
+    plugin,
+    "give",
+    "talismans.command.give",
+    false
+) {
     private val numbers = listOf(
         "1",
         "2",
@@ -36,6 +44,11 @@ class CommandGive(plugin: EcoPlugin) : Subcommand(plugin, "give", "talismans.com
             amount = args[2].toIntOrNull() ?: 1
         }
 
+        if (amount < 1) {
+            sender.sendMessage(plugin.langYml.getMessage("invalid-amount"))
+            return
+        }
+
         val receiverName = args[0]
         val receiver = Bukkit.getPlayer(receiverName)
 
@@ -52,17 +65,23 @@ class CommandGive(plugin: EcoPlugin) : Subcommand(plugin, "give", "talismans.com
             return
         }
 
-        var message = plugin.langYml.getMessage("give-success")
+        // The console runs off the player's region on Folia.
+        receiver.runOwned {
+            var message = plugin.langYml.getMessage("give-success")
 
-        message = message.replace("%talisman%", talisman.name).replace("%recipient%", receiver.name)
+            message = message.replace("%talisman%", talisman.name.formatEco()).replace("%recipient%", receiver.name)
 
-        sender.sendMessage(message)
+            sender.sendMessage(message)
 
-        val itemStack = talisman.itemStack
+            val itemStack = talisman.itemStack
 
-        itemStack.amount = amount
+            itemStack.amount = amount
 
-        receiver.inventory.addItem(itemStack)
+            DropQueue(receiver)
+                .addItem(itemStack)
+                .forceTelekinesis()
+                .push()
+        }
     }
 
     override fun tabComplete(sender: CommandSender, args: List<String>): List<String> {
