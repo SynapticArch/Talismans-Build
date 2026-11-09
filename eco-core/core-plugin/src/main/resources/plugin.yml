@@ -27,8 +27,8 @@ permissions:
       talismans.command.talismans: true
       talismans.command.give: true
       talismans.command.bag: true
+      talismans.command.bagslots: true
       talismans.command.reload: true
-      talismans.fromtable.*: true
 
   talismans.command.reload:
     description: Allows reloading the config
@@ -39,9 +39,9 @@ permissions:
   talismans.command.bag:
     description: Allows the use of /talismans bag.
     default: true
+  talismans.command.bagslots:
+    description: Allows the use of /talismans bagslots.
+    default: op
   talismans.command.talismans:
     description: Allows the use of /talismans
-    default: true
-  talismans.fromtable.*:
-    description: Allows crafting all talismans
     default: true
